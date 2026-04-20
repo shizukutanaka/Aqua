@@ -1,0 +1,2519 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1C1C1E">
+<title>AQUA — Shader Studio</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   AQUA Design System — Apple HIG + Liquid Glass (macOS Tahoe)
+   設計: Carmack(性能) × Martin(単一責任) × Pike(簡潔)
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* System Materials — Apple semantic colors */
+  --bg: #000;
+  --bg-1: #1C1C1E;
+  --bg-2: #2C2C2E;
+  --bg-3: #3A3A3C;
+  --sep: rgba(84,84,88,.65);
+
+  /* Labels (Apple HIG) */
+  --label: #FFF;
+  --label-2: rgba(235,235,245,.60);
+  --label-3: rgba(235,235,245,.30);
+  --label-4: rgba(235,235,245,.18);
+
+  /* Brand — Aqua cyan */
+  --accent: #64D2FF;
+  --accent-2: #0A84FF;
+  --accent-glow: rgba(100,210,255,.28);
+
+  /* System tints */
+  --red: #FF453A;
+  --orange: #FF9F0A;
+  --yellow: #FFD60A;
+  --green: #30D158;
+  --mint: #63E6E2;
+  --teal: #40C8E0;
+  --indigo: #5E5CE6;
+  --purple: #BF5AF2;
+  --pink: #FF375F;
+
+  /* Liquid Glass materials */
+  --glass-thin: rgba(28,28,30,.55);
+  --glass-reg: rgba(28,28,30,.72);
+  --glass-thick: rgba(28,28,30,.88);
+  --glass-blur: blur(30px) saturate(180%);
+  --glass-blur-strong: blur(50px) saturate(200%);
+  --glass-hl: linear-gradient(180deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.03) 50%,rgba(255,255,255,0) 100%);
+  --glass-border: rgba(255,255,255,.08);
+
+  /* Shadows — soft depth */
+  --sh-1: 0 1px 2px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.15);
+  --sh-2: 0 4px 16px rgba(0,0,0,.35), 0 2px 4px rgba(0,0,0,.2);
+  --sh-float: 0 24px 60px rgba(0,0,0,.55), 0 8px 24px rgba(0,0,0,.35);
+  --sh-inner: inset 0 1px 0 rgba(255,255,255,.06);
+
+  /* Radii — continuous (squircle-ish) */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* Typography — Apple system */
+  --font: -apple-system, 'SF Pro Text', BlinkMacSystemFont, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-display: -apple-system, 'SF Pro Display', BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* Motion — iOS spring */
+  --spring: cubic-bezier(.175,.885,.32,1.275);
+  --smooth: cubic-bezier(.25,.1,.25,1);
+  --decel: cubic-bezier(0,0,.2,1);
+
+  /* Geometry */
+  --toolbar-h: 52px;
+  --sidebar-w: 260px;
+  --inspector-w: 320px;
+  --editor-h: 280px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--label);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+::selection { background: var(--accent); color: var(--bg); }
+
+/* ═══ Layout ═══════════════════════════════════════════════════ */
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: var(--toolbar-h) 1fr auto;
+  grid-template-columns: var(--sidebar-w) 1fr var(--inspector-w);
+  grid-template-areas:
+    "tb tb tb"
+    "sb stage ins"
+    "ed ed ed";
+}
+
+/* ═══ Canvas stage ═════════════════════════════════════════════ */
+#stage {
+  grid-area: stage;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+#stage canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#stage-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.35) 100%);
+}
+
+/* Canvas HUD badges (top-left corner) */
+.hud {
+  position: absolute;
+  top: 14px; left: 14px;
+  display: flex; gap: 8px;
+  pointer-events: none;
+}
+.hud .pill {
+  pointer-events: auto;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--glass-reg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  font-size: 11px;
+  font-weight: 590;
+  letter-spacing: 0.02em;
+  color: var(--label-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.hud .pill.live::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: .4; } }
+
+.hud-r {
+  position: absolute; top: 14px; right: 14px;
+  display: flex; gap: 8px;
+}
+.hud-r .iconbtn {
+  pointer-events: auto;
+  width: 36px; height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--glass-reg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--label-2);
+  display: grid; place-items: center;
+  transition: background .15s var(--smooth), transform .2s var(--spring), color .15s;
+}
+.hud-r .iconbtn:hover { background: var(--bg-3); color: var(--label); }
+.hud-r .iconbtn:active { transform: scale(.92); }
+
+/* ═══ Toolbar ══════════════════════════════════════════════════ */
+#toolbar {
+  grid-area: tb;
+  display: flex; align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+  position: relative;
+  z-index: 10;
+}
+#toolbar::after {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: var(--glass-hl);
+  pointer-events: none;
+}
+
+.traffic {
+  display: flex; gap: 8px; margin-right: 4px;
+}
+.traffic i {
+  width: 12px; height: 12px; border-radius: 50%;
+  display: block;
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.3);
+}
+.traffic i:nth-child(1) { background: #FF5F57; }
+.traffic i:nth-child(2) { background: #FEBC2E; }
+.traffic i:nth-child(3) { background: #28C840; }
+
+.brand {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px; height: 32px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+.brand .dot {
+  width: 16px; height: 16px; border-radius: 5px;
+  background: radial-gradient(circle at 30% 30%, var(--accent), var(--accent-2));
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+.brand .ver { font-size: 10px; color: var(--label-3); font-weight: 500; }
+
+.tb-sep {
+  width: 1px; height: 20px; background: var(--sep); margin: 0 2px;
+}
+
+.tb-btn {
+  height: 30px; padding: 0 12px;
+  border-radius: var(--r-sm);
+  color: var(--label-2);
+  font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background .12s var(--smooth), color .12s;
+}
+.tb-btn:hover { background: var(--bg-2); color: var(--label); }
+.tb-btn:active { background: var(--bg-3); }
+.tb-btn.primary {
+  background: var(--accent-2); color: white;
+  font-weight: 590;
+  box-shadow: 0 1px 2px rgba(10,132,255,.3), inset 0 1px 0 rgba(255,255,255,.15);
+}
+.tb-btn.primary:hover { background: #1691FF; }
+.tb-btn svg { width: 14px; height: 14px; }
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-2);
+  border-radius: var(--r-sm);
+  gap: 2px;
+}
+.segmented button {
+  height: 26px; padding: 0 12px;
+  border-radius: 8px;
+  color: var(--label-2);
+  font-size: 11px; font-weight: 590;
+  transition: all .15s var(--smooth);
+}
+.segmented button.active {
+  background: var(--bg-3);
+  color: var(--label);
+  box-shadow: var(--sh-1);
+}
+.segmented button:not(.active):hover { color: var(--label); }
+
+.spacer { flex: 1; }
+
+.cmdk {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 10px 0 12px;
+  background: var(--bg-2);
+  border-radius: var(--r-sm);
+  color: var(--label-3);
+  font-size: 11px;
+  min-width: 200px;
+  transition: background .12s;
+}
+.cmdk:hover { background: var(--bg-3); color: var(--label-2); }
+.cmdk kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  color: var(--label-2);
+}
+
+/* ═══ Sidebar ══════════════════════════════════════════════════ */
+#sidebar {
+  grid-area: sb;
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
+  overflow-y: auto;
+  padding: 8px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-3) transparent;
+}
+#sidebar::-webkit-scrollbar { width: 8px; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+
+.sb-section {
+  padding: 10px 10px 4px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+.sb-item {
+  display: flex; align-items: center; gap: 10px;
+  margin: 1px 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-xs);
+  color: var(--label);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .1s var(--smooth);
+}
+.sb-item:hover { background: var(--bg-2); }
+.sb-item.active { background: var(--accent-2); color: white; }
+.sb-item.active .sb-icon { color: white; }
+.sb-icon {
+  width: 16px; height: 16px;
+  color: var(--label-2);
+  flex-shrink: 0;
+}
+.sb-sw {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--label-3);
+  padding: 2px 5px;
+  background: rgba(255,255,255,.05);
+  border-radius: 3px;
+}
+.sb-item.active .sb-sw { background: rgba(255,255,255,.15); color: rgba(255,255,255,.8); }
+
+/* ═══ Inspector ════════════════════════════════════════════════ */
+#inspector {
+  grid-area: ins;
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-left: 1px solid var(--glass-border);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-3) transparent;
+}
+#inspector::-webkit-scrollbar { width: 8px; }
+#inspector::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+
+.ins-tabs {
+  display: flex;
+  padding: 10px 12px 0;
+  gap: 2px;
+  position: sticky; top: 0;
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  z-index: 2;
+  border-bottom: 1px solid var(--sep);
+}
+.ins-tab {
+  flex: 1; height: 30px;
+  font-size: 11px; font-weight: 590;
+  color: var(--label-2);
+  border-radius: 6px 6px 0 0;
+  position: relative;
+  transition: color .12s;
+}
+.ins-tab.active { color: var(--label); }
+.ins-tab.active::after {
+  content: ''; position: absolute;
+  left: 8px; right: 8px; bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+.ins-tab:hover { color: var(--label); }
+
+.ins-group {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sep);
+}
+.ins-group h4 {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--label-3);
+  margin-bottom: 10px;
+}
+.ins-row {
+  display: flex; align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+.ins-row:last-child { margin-bottom: 0; }
+.ins-label {
+  font-size: 11px;
+  color: var(--label-2);
+  min-width: 70px;
+  font-weight: 500;
+}
+.ins-val {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--label);
+  background: var(--bg-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 48px; text-align: right;
+}
+
+/* iOS-style slider */
+.slider {
+  flex: 1;
+  -webkit-appearance: none; appearance: none;
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4), 0 0 0 .5px rgba(0,0,0,.1);
+  cursor: grab;
+  transition: transform .15s var(--spring);
+}
+.slider::-webkit-slider-thumb:active { transform: scale(1.15); cursor: grabbing; }
+.slider::-moz-range-thumb {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: white;
+  border: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+
+/* iOS toggle */
+.toggle {
+  width: 44px; height: 26px;
+  background: var(--bg-3);
+  border-radius: 999px;
+  position: relative;
+  cursor: pointer;
+  transition: background .25s var(--smooth);
+}
+.toggle::after {
+  content: ''; position: absolute;
+  top: 2px; left: 2px;
+  width: 22px; height: 22px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,.3);
+  transition: transform .3s var(--spring);
+}
+.toggle.on { background: var(--green); }
+.toggle.on::after { transform: translateX(18px); }
+
+/* Color swatch */
+.swatch {
+  display: inline-flex; gap: 4px;
+}
+.swatch > i {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: border-color .15s, transform .15s var(--spring);
+}
+.swatch > i:hover { transform: scale(1.1); }
+.swatch > i.sel { border-color: white; }
+
+/* Stat grid */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat {
+  background: var(--bg-2);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+}
+.stat-k { font-size: 9px; color: var(--label-3); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+.stat-v { font-family: var(--font-mono); font-size: 14px; color: var(--label); font-weight: 590; margin-top: 2px; }
+.stat-v.ok { color: var(--green); }
+.stat-v.warn { color: var(--orange); }
+.stat-v.err { color: var(--red); }
+
+/* ═══ Editor ═══════════════════════════════════════════════════ */
+#editor {
+  grid-area: ed;
+  height: var(--editor-h);
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-top: 1px solid var(--glass-border);
+  display: flex; flex-direction: column;
+  transition: height .3s var(--smooth);
+  position: relative;
+}
+#editor.collapsed { height: 38px; }
+#editor.collapsed #editor-body { display: none; }
+
+#editor-head {
+  height: 38px;
+  padding: 0 12px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--sep);
+  flex-shrink: 0;
+}
+.ed-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--label-2);
+  display: flex; align-items: center; gap: 6px;
+}
+.ed-title .mod { color: var(--orange); }
+
+.ed-chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: var(--bg-2);
+  color: var(--label-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.ed-chip.ok { background: rgba(48,209,88,.18); color: var(--green); }
+.ed-chip.err { background: rgba(255,69,58,.18); color: var(--red); }
+
+#editor-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.ed-gutter {
+  background: transparent;
+  color: var(--label-3);
+  padding: 10px 8px 10px 0;
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+  font-size: 10.5px;
+}
+.ed-gutter .ln { line-height: inherit; }
+.ed-gutter .ln.err { color: var(--red); font-weight: 700; }
+
+.ed-area {
+  position: relative;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.ed-area::-webkit-scrollbar { height: 8px; width: 8px; }
+.ed-area::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.ed-ta {
+  width: 100%; min-height: 100%;
+  padding: 10px 14px 10px 0;
+  background: transparent;
+  color: var(--label);
+  border: 0;
+  outline: none;
+  resize: none;
+  font: inherit;
+  tab-size: 2;
+  white-space: pre;
+  caret-color: var(--accent);
+  user-select: text;
+}
+
+.ed-errors {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  max-height: 80px;
+  overflow-y: auto;
+  background: rgba(255,69,58,.08);
+  border-top: 1px solid rgba(255,69,58,.3);
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--red);
+}
+.ed-err-line { padding: 2px 0; }
+.ed-err-line b { color: var(--orange); margin-right: 6px; }
+
+/* ═══ Command Palette ═════════════════════════════════════════ */
+.scrim {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+  animation: fadein .2s var(--smooth);
+}
+.scrim.show { display: flex; }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes pop {
+  from { opacity: 0; transform: scale(.96) translateY(-8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+#cmd-palette {
+  width: 560px; max-width: 92vw;
+  max-height: 60vh;
+  background: var(--glass-thin);
+  backdrop-filter: var(--glass-blur-strong);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-float);
+  overflow: hidden;
+  animation: pop .25s var(--spring);
+  display: flex; flex-direction: column;
+}
+#cmd-palette::before {
+  content: ''; position: absolute;
+  inset: 0 0 auto 0; height: 1px;
+  background: var(--glass-hl);
+  pointer-events: none;
+}
+.cmd-input {
+  height: 54px;
+  padding: 0 20px;
+  background: transparent;
+  border: 0; outline: none;
+  color: var(--label);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid var(--sep);
+}
+.cmd-input::placeholder { color: var(--label-3); }
+.cmd-list { overflow-y: auto; padding: 6px; }
+.cmd-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+}
+.cmd-row.sel { background: var(--accent-2); color: white; }
+.cmd-row .ico {
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 5px;
+  background: var(--bg-3);
+  color: var(--label-2);
+}
+.cmd-row.sel .ico { background: rgba(255,255,255,.2); color: white; }
+.cmd-row .txt { flex: 1; }
+.cmd-row .sub { font-size: 11px; color: var(--label-3); }
+.cmd-row.sel .sub { color: rgba(255,255,255,.75); }
+.cmd-row .sc {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  color: var(--label-3);
+}
+.cmd-row.sel .sc { background: rgba(255,255,255,.2); color: white; }
+
+/* ═══ Toast ═══════════════════════════════════════════════════ */
+#toasts {
+  position: fixed;
+  top: calc(var(--toolbar-h) + 14px);
+  left: 50%; transform: translateX(-50%);
+  z-index: 200;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--glass-thick);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  padding: 10px 18px;
+  font-size: 12px; font-weight: 500;
+  color: var(--label);
+  box-shadow: var(--sh-float);
+  display: flex; align-items: center; gap: 8px;
+  animation: toast-in .4s var(--spring);
+  pointer-events: auto;
+}
+.toast.out { animation: toast-out .3s var(--smooth) forwards; }
+.toast .ic { width: 14px; height: 14px; color: var(--accent); }
+.toast.ok .ic { color: var(--green); }
+.toast.err .ic { color: var(--red); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-14px) scale(.95); } }
+@keyframes toast-out { to { opacity: 0; transform: translateY(-14px) scale(.95); } }
+
+/* ═══ Sheet (export modal) ════════════════════════════════════ */
+#sheet {
+  width: 520px; max-width: 92vw;
+  background: var(--glass-reg);
+  backdrop-filter: var(--glass-blur-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-float);
+  overflow: hidden;
+  animation: pop .3s var(--spring);
+}
+.sh-head {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--sep);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sh-head h3 {
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sh-body { padding: 16px 20px; }
+.sh-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sh-opt {
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  cursor: pointer;
+  transition: background .15s, transform .15s var(--spring);
+  border: 1.5px solid transparent;
+}
+.sh-opt:hover { background: var(--bg-3); }
+.sh-opt.sel { background: var(--accent-2); color: white; border-color: rgba(255,255,255,.2); }
+.sh-opt .n { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.sh-opt .d { font-size: 11px; color: var(--label-3); }
+.sh-opt.sel .d { color: rgba(255,255,255,.8); }
+.sh-foot {
+  padding: 14px 20px;
+  display: flex; justify-content: flex-end; gap: 8px;
+  border-top: 1px solid var(--sep);
+}
+
+/* ═══ Channel slots ═══════════════════════════════════════════ */
+.ch-slot {
+  background: var(--bg-2);
+  border-radius: var(--r-md);
+  padding: 10px;
+}
+.ch-prev {
+  width: 100%;
+  height: 80px;
+  background:
+    linear-gradient(45deg, var(--bg-3) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-3) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--bg-3) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--bg-3) 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+  border-radius: var(--r-sm);
+  margin-bottom: 8px;
+  position: relative;
+  overflow: hidden;
+  display: grid; place-items: center;
+  color: var(--label-3);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.ch-prev img { width: 100%; height: 100%; object-fit: cover; }
+.ch-prev canvas { width: 100%; height: 100%; }
+.ch-prev.has::after {
+  content: '●'; position: absolute; top: 4px; right: 6px;
+  color: var(--green); font-size: 10px;
+  text-shadow: 0 0 4px var(--green);
+}
+.ch-ctrl { display: flex; gap: 6px; margin-bottom: 6px; }
+.ch-ctrl .tb-btn { flex: 1; justify-content: center; height: 26px; font-size: 11px; }
+.ch-hint {
+  font-size: 10px; color: var(--label-3); line-height: 1.5;
+}
+
+/* Recording indicator */
+.rec-pill {
+  position: absolute; top: 14px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,69,58,.18);
+  border: 1px solid rgba(255,69,58,.5);
+  color: var(--red);
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  display: none;
+  align-items: center; gap: 6px;
+  z-index: 5;
+  pointer-events: none;
+}
+.rec-pill.on { display: inline-flex; }
+.rec-pill::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red);
+  animation: rec-blink 1s ease-in-out infinite;
+}
+@keyframes rec-blink { 50% { opacity: .2; } }
+
+#btn-record.on { color: var(--red); background: rgba(255,69,58,.2); }
+
+/* Drop zone highlight */
+#stage.drop-hover::before {
+  content: '画像をドロップ → iChannel0';
+  position: absolute; inset: 12px;
+  border: 3px dashed var(--accent);
+  border-radius: var(--r-lg);
+  display: grid; place-items: center;
+  font-size: 20px; font-weight: 700; color: var(--accent);
+  background: rgba(100,210,255,.08);
+  z-index: 4;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+/* Share sheet specific */
+.share-url {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--sep);
+  border-radius: var(--r-sm);
+  color: var(--label);
+  outline: none;
+  margin-top: 8px;
+  word-break: break-all;
+}
+
+/* ═══ Fullscreen preview mode ═════════════════════════════════ */
+body.zen #toolbar, body.zen #sidebar, body.zen #inspector, body.zen #editor { display: none; }
+body.zen #app { grid-template: "stage" 1fr / 1fr; }
+body.zen .hud, body.zen .hud-r { opacity: .6; transition: opacity .3s; }
+body.zen:hover .hud, body.zen:hover .hud-r { opacity: 1; }
+
+/* ═══ Responsive ═══════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  :root { --sidebar-w: 0px; --inspector-w: 280px; }
+  #sidebar { display: none; }
+}
+@media (max-width: 720px) {
+  :root { --inspector-w: 0px; --editor-h: 200px; }
+  #inspector { display: none; }
+  .brand .ver { display: none; }
+  .cmdk { display: none; }
+}
+
+/* ═══ A11y ═════════════════════════════════════════════════════ */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ═══ Toolbar ═══ -->
+  <header id="toolbar">
+    <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="brand">
+      <span class="dot"></span>
+      <span>AQUA</span>
+      <span class="ver">2.0</span>
+    </div>
+    <div class="tb-sep"></div>
+
+    <button class="tb-btn" id="btn-play" title="再生/停止 (Space)">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path id="play-ic" d="M4 3l9 5-9 5V3z"/></svg>
+      <span id="play-lbl">一時停止</span>
+    </button>
+    <button class="tb-btn" id="btn-reset" title="リセット (⌘R)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 0 2-4.5M2 3v3h3"/></svg>
+    </button>
+    <button class="tb-btn" id="btn-snap" title="スクリーンショット">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3.5" width="13" height="10" rx="2"/><circle cx="8" cy="8.5" r="2.5"/><path d="M6 3.5l1-1.5h2l1 1.5"/></svg>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <div class="segmented" role="tablist">
+      <button class="active" data-device="desktop">デスクトップ</button>
+      <button data-device="tablet">タブレット</button>
+      <button data-device="phone">モバイル</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <button class="cmdk" id="btn-cmdk">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="m14 14-3.5-3.5"/></svg>
+      <span>コマンド or 検索</span>
+      <kbd>⌘K</kbd>
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <button class="tb-btn primary" id="btn-export">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 11V2M4.5 5.5L8 2l3.5 3.5M2.5 11v2a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-2"/></svg>
+      書き出し
+    </button>
+  </header>
+
+  <!-- ═══ Sidebar: Library ═══ -->
+  <aside id="sidebar" aria-label="シェーダーライブラリ">
+    <div class="sb-section">プリセット</div>
+    <div id="preset-list"></div>
+
+    <div class="sb-section">参照</div>
+    <div class="sb-item" data-ref="https://www.shadertoy.com">
+      <svg class="sb-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12v8H2z"/><path d="M5 7l2 2 4-4"/></svg>
+      <span>ShaderToy</span>
+    </div>
+    <div class="sb-item" data-ref="https://thebookofshaders.com">
+      <svg class="sb-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2h6l4 4v8a1 1 0 0 1-1 1H3z"/><path d="M9 2v4h4"/></svg>
+      <span>The Book of Shaders</span>
+    </div>
+
+    <div class="sb-section">最近</div>
+    <div id="recent-list"></div>
+  </aside>
+
+  <!-- ═══ Canvas stage ═══ -->
+  <main id="stage">
+    <canvas id="gl" aria-label="シェーダープレビュー"></canvas>
+    <div id="stage-overlay"></div>
+    <div class="rec-pill" id="rec-pill"><span id="rec-time">00:00</span></div>
+    <input type="file" id="file-tex" accept="image/*" style="display:none">
+    <div class="hud">
+      <span class="pill live" id="hud-status">レンダリング中</span>
+      <span class="pill" id="hud-fps">— FPS</span>
+      <span class="pill" id="hud-res">—</span>
+    </div>
+    <div class="hud-r">
+      <button class="iconbtn" id="btn-zen" title="集中モード (F)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+      </button>
+      <button class="iconbtn" id="btn-editor" title="エディタ開閉 (⌘E)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M1.5 6h13M4 9l2 2M8 11h4"/></svg>
+      </button>
+      <button class="iconbtn" id="btn-record" title="動画録画 (R)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="4"/></svg>
+      </button>
+      <button class="iconbtn" id="btn-share" title="共有リンク (⌘⇧S)">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="4" cy="8" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 7l4-2M6 9l4 2"/></svg>
+      </button>
+    </div>
+  </main>
+
+  <!-- ═══ Inspector ═══ -->
+  <aside id="inspector" aria-label="インスペクタ">
+    <div class="ins-tabs" role="tablist">
+      <button class="ins-tab active" data-tab="params">パラメータ</button>
+      <button class="ins-tab" data-tab="channels">チャネル</button>
+      <button class="ins-tab" data-tab="perf">性能</button>
+    </div>
+
+    <div id="ins-params">
+      <div class="ins-group">
+        <h4>表示</h4>
+        <div class="ins-row">
+          <span class="ins-label">時間速度</span>
+          <input class="slider" type="range" id="p-speed" min="0" max="3" step="0.01" value="1">
+          <span class="ins-val" id="v-speed">1.00x</span>
+        </div>
+        <div class="ins-row">
+          <span class="ins-label">解像度</span>
+          <input class="slider" type="range" id="p-dpr" min="0.5" max="2" step="0.25" value="1">
+          <span class="ins-val" id="v-dpr">1.00x</span>
+        </div>
+        <div class="ins-row">
+          <span class="ins-label">ループ</span>
+          <div class="toggle on" id="p-loop"></div>
+        </div>
+      </div>
+
+      <div class="ins-group">
+        <h4>カラーパレット</h4>
+        <div class="swatch" id="palette">
+          <i class="sel" style="background:linear-gradient(135deg,#64D2FF,#0A84FF)" data-pal="0"></i>
+          <i style="background:linear-gradient(135deg,#BF5AF2,#FF375F)" data-pal="1"></i>
+          <i style="background:linear-gradient(135deg,#30D158,#63E6E2)" data-pal="2"></i>
+          <i style="background:linear-gradient(135deg,#FF9F0A,#FF453A)" data-pal="3"></i>
+          <i style="background:linear-gradient(135deg,#FFD60A,#30D158)" data-pal="4"></i>
+          <i style="background:linear-gradient(135deg,#FFF,#8E8E93)" data-pal="5"></i>
+        </div>
+      </div>
+
+      <div class="ins-group" id="param-auto">
+        <h4>シェーダーパラメータ</h4>
+        <div id="param-slots" style="color:var(--label-3);font-size:11px;">プリセット選択でパラメータ表示</div>
+      </div>
+    </div>
+
+    <div id="ins-channels" style="display:none">
+      <div class="ins-group">
+        <h4>iChannel0 — 画像</h4>
+        <div class="ch-slot" id="ch-slot-0">
+          <div class="ch-prev" id="ch-prev-0"></div>
+          <div class="ch-ctrl">
+            <button class="tb-btn" id="ch-load-0">読込</button>
+            <button class="tb-btn" id="ch-clear-0">削除</button>
+          </div>
+          <div class="ch-hint">またはキャンバスへ画像をドラッグ&ドロップ</div>
+        </div>
+      </div>
+      <div class="ins-group">
+        <h4>iChannel1 — オーディオFFT</h4>
+        <div class="ch-slot">
+          <div class="ch-prev" id="ch-prev-1"><canvas id="audio-prev" width="128" height="64"></canvas></div>
+          <div class="ins-row">
+            <span class="ins-label">マイク</span>
+            <div class="toggle" id="ch-audio-on"></div>
+          </div>
+          <div class="ch-hint">有効化でマイクFFT(256)+波形(256)をテクスチャ化</div>
+        </div>
+      </div>
+      <div class="ins-group">
+        <h4>バッファA — 前フレーム</h4>
+        <div class="ins-row">
+          <span class="ins-label">有効化</span>
+          <div class="toggle" id="bufA-on"></div>
+        </div>
+        <div class="ch-hint">有効時は <code style="color:var(--accent);font-family:var(--font-mono)">uniform sampler2D iBufferA;</code> 参照可。前フレームを読み込みフィードバック効果作成。</div>
+      </div>
+    </div>
+
+    <div id="ins-perf" style="display:none">
+      <div class="ins-group">
+        <h4>リアルタイム統計</h4>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">FPS</div><div class="stat-v ok" id="st-fps">—</div></div>
+          <div class="stat"><div class="stat-k">フレーム時間</div><div class="stat-v" id="st-ft">—</div></div>
+          <div class="stat"><div class="stat-k">解像度</div><div class="stat-v" id="st-res">—</div></div>
+          <div class="stat"><div class="stat-k">コンパイル</div><div class="stat-v" id="st-comp">—</div></div>
+          <div class="stat"><div class="stat-k">GPU</div><div class="stat-v" style="font-size:10px" id="st-gpu">—</div></div>
+          <div class="stat"><div class="stat-k">WebGL</div><div class="stat-v" id="st-gl">—</div></div>
+        </div>
+      </div>
+      <div class="ins-group">
+        <h4>目標</h4>
+        <div class="ins-row">
+          <span class="ins-label">60 FPS</span>
+          <div class="toggle on" id="p-60"></div>
+        </div>
+        <div class="ins-row">
+          <span class="ins-label">アダプティブ品質</span>
+          <div class="toggle" id="p-adapt"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ Editor ═══ -->
+  <section id="editor">
+    <div id="editor-head">
+      <div class="ed-title">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3L2 8l3 5M11 3l3 5-3 5"/></svg>
+        <span id="ed-fn">fragment.glsl</span>
+        <span class="mod" id="ed-mod" style="display:none">●</span>
+      </div>
+      <span class="ed-chip ok" id="ed-chip">✓ コンパイル成功</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="tb-btn" id="btn-recompile" title="再コンパイル (⌘S)">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l12 6-12 6V2z"/></svg>
+        実行
+      </button>
+      <button class="tb-btn" id="btn-ed-collapse" title="折りたたみ">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 10l4-4 4 4"/></svg>
+      </button>
+    </div>
+    <div id="editor-body">
+      <div class="ed-gutter" id="ed-gutter"></div>
+      <div class="ed-area">
+        <textarea class="ed-ta" id="ed-ta" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"></textarea>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Overlays -->
+<div class="scrim" id="scrim-cmd">
+  <div id="cmd-palette">
+    <input class="cmd-input" id="cmd-input" placeholder="コマンド実行、プリセット検索…" autocomplete="off">
+    <div class="cmd-list" id="cmd-list"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-sheet">
+  <div id="sheet">
+    <div class="sh-head">
+      <h3>シェーダーを書き出し</h3>
+      <button class="tb-btn" id="sheet-close" title="閉じる">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+    <div class="sh-body">
+      <div class="sh-opts" id="sh-opts">
+        <div class="sh-opt sel" data-fmt="glsl"><div class="n">GLSL</div><div class="d">生のフラグメントシェーダー</div></div>
+        <div class="sh-opt" data-fmt="shadertoy"><div class="n">ShaderToy</div><div class="d">mainImage形式</div></div>
+        <div class="sh-opt" data-fmt="three"><div class="n">Three.js</div><div class="d">ShaderMaterial</div></div>
+        <div class="sh-opt" data-fmt="html"><div class="n">HTML</div><div class="d">スタンドアロン</div></div>
+        <div class="sh-opt" data-fmt="png"><div class="n">PNG</div><div class="d">現在フレームを画像で</div></div>
+        <div class="sh-opt" data-fmt="json"><div class="n">JSON</div><div class="d">プロジェクトファイル</div></div>
+      </div>
+    </div>
+    <div class="sh-foot">
+      <button class="tb-btn" id="sheet-cancel">キャンセル</button>
+      <button class="tb-btn primary" id="sheet-ok">書き出し</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   AQUA Core — Architecture (SOLID)
+   - Renderer:  WebGL2 管理、単一責任 = 描画のみ
+   - Editor:    テキスト → コンパイル + uniform解析
+   - State:     プロジェクト状態、永続化
+   - UI:        DOM操作、イベント配線
+   ═══════════════════════════════════════════════════════════════ */
+
+'use strict';
+
+// ═══ Presets ═══════════════════════════════════════════════════
+// Uniforms iTime/iResolution/iMouse/iFrame/iChannel0/iChannel1/iBufferA/u_color/u_p
+// are provided automatically by the Renderer — do not redeclare.
+const PRESETS = [
+  {
+    id: 'aqua-flow',
+    name: 'Aqua Flow',
+    icon: '~',
+    shortcut: '1',
+    code: `// AQUA — Liquid Flow
+// @param flow [0.3, 3.0, 1.2]
+// @param detail [1.0, 8.0, 4.0]
+// @param hue [0.4, 0.7, 0.55]
+
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.5;
+  for(int i=0;i<6;i++){v+=a*noise(p);p*=2.02;a*=.5;}return v;}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / min(iResolution.x,iResolution.y);
+  float t = iTime * u_p[0];
+  vec2 q = uv * u_p[1];
+  float n = fbm(q + vec2(t*.15, -t*.1));
+  float m = fbm(q*1.7 + n*2.0 + vec2(-t*.2, t*.12));
+  vec3 base = u_color;
+  vec3 hi = mix(base, vec3(1.), .6);
+  vec3 col = mix(base*.15, hi, smoothstep(.35,.85,m));
+  col += pow(smoothstep(.6,1.,m), 4.) * vec3(.4,.7,1.) * .6;
+  col *= 1.0 - .35*length(uv);
+  gl_FragColor = vec4(col, 1.);
+}`
+  },
+  {
+    id: 'ripple',
+    name: 'Ripple',
+    icon: '◎',
+    shortcut: '2',
+    code: `// Concentric Ripples (click & drag to move source)
+// @param freq [5.0, 40.0, 18.0]
+// @param speed [0.5, 4.0, 1.5]
+// @param sharp [0.5, 6.0, 2.0]
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / min(iResolution.x,iResolution.y);
+  vec2 mc = (abs(iMouse.xy) / iResolution.xy - .5) * 2.0;
+  float d = length(uv - mc);
+  float w = sin(d*u_p[0] - iTime*u_p[1]);
+  w = pow(abs(w), u_p[2]) * sign(w);
+  vec3 c = u_color * (.5 + .5*w) + vec3(.02,.1,.2);
+  c *= exp(-d*.8);
+  gl_FragColor = vec4(c, 1.);
+}`
+  },
+  {
+    id: 'plasma',
+    name: 'Chromatic Plasma',
+    icon: '◈',
+    shortcut: '3',
+    code: `// Chromatic Plasma
+// @param scale [1.0, 10.0, 4.0]
+// @param warp [0.0, 3.0, 1.2]
+// @param chroma [0.0, 0.1, 0.03]
+
+vec3 pal(float t){return .5 + .5*cos(6.283*(vec3(.0,.33,.67)+t));}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / min(iResolution.x,iResolution.y);
+  uv *= u_p[0];
+  float t = iTime*.3;
+  for(int i=0;i<4;i++){
+    float fi = float(i)+1.0;
+    uv += u_p[1]*vec2(sin(uv.y*fi+t), cos(uv.x*fi+t))/fi;
+  }
+  vec3 c = pal(length(uv)*.2 + t*.1) * u_color * 2.0;
+  c.r *= 1. + u_p[2]*sin(iTime*2.);
+  c.b *= 1. - u_p[2]*sin(iTime*2.);
+  gl_FragColor = vec4(c, 1.);
+}`
+  },
+  {
+    id: 'crystal',
+    name: 'Crystal Voronoi',
+    icon: '◆',
+    shortcut: '4',
+    code: `// Voronoi Crystal
+// @param cells [2.0, 20.0, 8.0]
+// @param edge [0.01, 0.2, 0.04]
+// @param glow [0.0, 2.0, 1.0]
+
+vec2 hash2(vec2 p){p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));
+  return fract(sin(p)*43758.5453);}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / iResolution.xy;
+  uv.x *= iResolution.x/iResolution.y;
+  uv *= u_p[0];
+  vec2 g = floor(uv), f = fract(uv);
+  float m = 8., m2 = 8.;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+    vec2 o = vec2(x,y);
+    vec2 p = o + hash2(g+o)*(.5+.5*sin(iTime+6.283*hash2(g+o).x));
+    float d = length(f-p);
+    if(d<m){m2=m; m=d;} else if(d<m2) m2=d;
+  }
+  float e = smoothstep(0., u_p[1], m2-m);
+  vec3 c = u_color * e + u_color * u_p[2] * (1.-e) * .3;
+  gl_FragColor = vec4(c, 1.);
+}`
+  },
+  {
+    id: 'aurora',
+    name: 'Aurora',
+    icon: '≋',
+    shortcut: '5',
+    code: `// Northern Lights
+// @param bands [1.0, 6.0, 3.0]
+// @param speed [0.2, 2.0, 0.6]
+// @param soft [0.1, 1.0, 0.4]
+
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / iResolution.xy;
+  vec3 col = vec3(0.);
+  for(float i=0.; i<u_p[0]; i++){
+    float y = uv.y + .15*i + noise(vec2(uv.x*2.+i, iTime*u_p[1]))*.3;
+    float a = smoothstep(.5, .5+u_p[2], 1.0 - abs(y - .5 - .1*sin(uv.x*3.+iTime)));
+    col += u_color * a * (1.0 - i/u_p[0]) * .7;
+  }
+  col += vec3(.02,.02,.08);
+  gl_FragColor = vec4(col, 1.);
+}`
+  },
+  {
+    id: 'audio-bars',
+    name: 'Audio Bars',
+    icon: '♪',
+    shortcut: '6',
+    code: `// Audio reactive — enable mic in Channels tab
+// @param barsN [16.0, 128.0, 64.0]
+// @param glow [0.0, 3.0, 1.2]
+// @param smooth [0.0, 0.1, 0.02]
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / iResolution.xy;
+  float bar = floor(uv.x * u_p[0]) / u_p[0];
+  // iChannel1: row0 = FFT, row1 = waveform
+  float fft = texture(iChannel1, vec2(bar + 0.5/u_p[0], 0.25)).r;
+  float h = smoothstep(fft - u_p[2], fft, uv.y);
+  vec3 col = mix(u_color * u_p[1], vec3(1.), uv.y) * (1. - h);
+  // Mirror waveform across top
+  float wf = texture(iChannel1, vec2(uv.x, 0.75)).r;
+  float line = smoothstep(0.003, 0., abs(uv.y - 0.5 - (wf-0.5)*0.3));
+  col += u_color * line * 2.0;
+  gl_FragColor = vec4(col, 1.);
+}`
+  },
+  {
+    id: 'feedback',
+    name: 'Feedback Loop',
+    icon: '↻',
+    shortcut: '7',
+    code: `// Feedback — enable Buffer A in Channels tab
+// @param decay [0.8, 0.99, 0.94]
+// @param zoom [0.99, 1.05, 1.01]
+// @param rotate [0.0, 0.05, 0.01]
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / iResolution.xy;
+  vec2 c = uv - 0.5;
+  float s = sin(u_p[2]), co = cos(u_p[2]);
+  c = mat2(co,-s,s,co) * c / u_p[1];
+  vec4 prev = texture(iBufferA, c + 0.5) * u_p[0];
+  float d = length(uv - 0.5);
+  vec3 src = u_color * smoothstep(0.25, 0.0, abs(d - 0.3 + 0.1*sin(iTime)));
+  gl_FragColor = vec4(max(prev.rgb, src), 1.0);
+}`
+  }
+];
+
+const PALETTES = [
+  [.39, .82, 1.00], // aqua
+  [.75, .35, .95], // purple-pink
+  [.19, .82, .35], // green-mint
+  [1.00, .62, .04], // orange-red
+  [1.00, .84, .04], // yellow-green
+  [1.00, 1.00, 1.00], // mono
+];
+
+// ═══ Renderer ══════════════════════════════════════════════════
+class Renderer {
+  constructor(canvas){
+    this.cv = canvas;
+    this.gl = canvas.getContext('webgl2', {antialias:false, preserveDrawingBuffer:true, powerPreference:'high-performance'})
+          || canvas.getContext('webgl', {antialias:false, preserveDrawingBuffer:true});
+    if(!this.gl) throw new Error('WebGL未対応');
+    this.isGL2 = (typeof WebGL2RenderingContext !== 'undefined' && this.gl instanceof WebGL2RenderingContext);
+    this.prog = null;
+    this.lastGoodProg = null;   // fallback on compile error
+    this.uLocs = {};
+    this.t0 = performance.now();
+    this.t = 0;
+    this.tPrev = 0;
+    this.dt = 0;
+    this.frame = 0;
+    this.paused = false;
+    this.mouse = [0, 0, 0, 0];  // vec4: xy=pos, zw=click origin (signed)
+    this.mouseDown = false;
+    this.color = [.39, .82, 1.0];
+    this.params = new Float32Array(8);
+    this.speed = 1;
+    this.dpr = 1;
+    this.compileMs = 0;
+    this.fps = 0;
+    this.lastFrameMs = 0;
+    this.frames = 0;
+    this.fpsAcc = 0;
+    this.errorCb = null;
+    // Textures
+    this.tex0 = this.createBlankTex();
+    this.tex1 = this.createBlankTex();
+    this.hasTex0 = false;
+    // BufferA (feedback)
+    this.bufA = null;
+    this.bufAEnabled = false;
+    this.initQuad();
+  }
+
+  createBlankTex(){
+    const gl = this.gl;
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return t;
+  }
+
+  setTex0FromImage(img){
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex0);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    this.hasTex0 = true;
+  }
+
+  clearTex0(){
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+    this.hasTex0 = false;
+  }
+
+  setTex1FromPixels(pixels, w, h){
+    // pixels: Uint8Array of size w*h*4. Used for audio texture.
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+
+  enableBufA(on){
+    const gl = this.gl;
+    if(on && !this.bufA){
+      const w = Math.max(1, this.cv.width|0), h = Math.max(1, this.cv.height|0);
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this.bufA = { tex, fbo, w, h };
+    }
+    this.bufAEnabled = on;
+  }
+
+  resizeBufA(){
+    if(!this.bufA) return;
+    const gl = this.gl;
+    const w = this.cv.width|0, h = this.cv.height|0;
+    if(w === this.bufA.w && h === this.bufA.h) return;
+    gl.bindTexture(gl.TEXTURE_2D, this.bufA.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    this.bufA.w = w; this.bufA.h = h;
+  }
+
+  initQuad(){
+    const gl = this.gl;
+    const vs = this.isGL2
+      ? `#version 300 es\nin vec2 p;void main(){gl_Position=vec4(p,0,1);}`
+      : `attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}`;
+    const v = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(v, vs); gl.compileShader(v);
+    this.vs = v;
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  }
+
+  // Wrap user source into a uniform-flexible, Shadertoy-compatible shader.
+  // Rules:
+  //   - If user has `void mainImage(out vec4, in vec2)` -> auto-wrap with main()
+  //   - Always declare all standard uniforms unless user redeclares them (strip dup)
+  //   - u_* and i* are both provided as aliases.
+  prepareSource(raw){
+    let src = raw.trim();
+    const hasMainImage = /void\s+mainImage\s*\(/.test(src);
+    const hasMain      = /void\s+main\s*\(\s*\)/.test(src);
+
+    // Strip user redeclarations of standard uniforms (we provide them).
+    const stripUniforms = [
+      'u_time','u_resolution','u_mouse','u_color','u_p',
+      'iTime','iResolution','iMouse','iFrame','iTimeDelta','iDate',
+      'iChannel0','iChannel1','iBufferA'
+    ];
+    for(const name of stripUniforms){
+      const arr = name==='u_p' ? '\\s*\\[\\s*\\d+\\s*\\]' : '';
+      const re = new RegExp(`uniform\\s+\\w+\\s+${name}${arr}\\s*;`, 'g');
+      src = src.replace(re, '');
+    }
+    // Also strip `precision` declarations — we'll add our own.
+    src = src.replace(/precision\s+\w+\s+float\s*;\s*/g, '');
+
+    // Build header
+    const isG2 = this.isGL2;
+    const header = isG2 ? `#version 300 es
+precision highp float;
+out vec4 _outColor;
+uniform float iTime;
+uniform float iTimeDelta;
+uniform int   iFrame;
+uniform vec3  iResolution;
+uniform vec4  iMouse;
+uniform vec4  iDate;
+uniform sampler2D iChannel0;
+uniform sampler2D iChannel1;
+uniform sampler2D iBufferA;
+uniform vec3  u_color;
+uniform float u_p[8];
+#define u_time iTime
+#define u_resolution (iResolution.xy)
+#define u_mouse (iMouse.xy/iResolution.xy)
+#define gl_FragColor _outColor
+#define texture2D texture
+` : `precision highp float;
+uniform float iTime;
+uniform float iTimeDelta;
+uniform int   iFrame;
+uniform vec3  iResolution;
+uniform vec4  iMouse;
+uniform vec4  iDate;
+uniform sampler2D iChannel0;
+uniform sampler2D iChannel1;
+uniform sampler2D iBufferA;
+uniform vec3  u_color;
+uniform float u_p[8];
+#define u_time iTime
+#define u_resolution (iResolution.xy)
+#define u_mouse (iMouse.xy/iResolution.xy)
+// Shadertoy uses texture(); in WebGL1 we map it to texture2D():
+#define texture(s,uv) texture2D(s,uv)
+`;
+
+    let body = src;
+    if(hasMainImage && !hasMain){
+      body += `
+void main(){
+  vec4 _c;
+  mainImage(_c, gl_FragCoord.xy);
+  ${isG2 ? '_outColor' : 'gl_FragColor'} = _c;
+}`;
+    }
+
+    // Track header line count for error offset.
+    this._headerLines = (header.match(/\n/g)||[]).length + 1;  // +1 for the joining \n
+    return header + '\n' + body;
+  }
+
+  compile(rawSrc){
+    const gl = this.gl;
+    const t0 = performance.now();
+    const fullSrc = this.prepareSource(rawSrc);
+
+    const f = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(f, fullSrc);
+    gl.compileShader(f);
+    if(!gl.getShaderParameter(f, gl.COMPILE_STATUS)){
+      const log = gl.getShaderInfoLog(f) || 'Unknown';
+      gl.deleteShader(f);
+      const hdrLines = this._headerLines || 0;
+      const adjusted = log.replace(/ERROR:\s*(\d+):(\d+):/g, (_, a, b) => `ERROR: ${a}:${Math.max(1, +b - hdrLines)}:`);
+      if(this.errorCb) this.errorCb(adjusted);
+      return false;
+    }
+    const p = gl.createProgram();
+    gl.attachShader(p, this.vs);
+    gl.attachShader(p, f);
+    gl.bindAttribLocation(p, 0, 'p');
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+      const log = gl.getProgramInfoLog(p);
+      if(this.errorCb) this.errorCb(log);
+      return false;
+    }
+    // Don't delete lastGood yet — we may need it if compile throws later
+    if(this.lastGoodProg && this.lastGoodProg !== this.prog) gl.deleteProgram(this.lastGoodProg);
+    this.lastGoodProg = this.prog;
+    this.prog = p;
+    gl.useProgram(p);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    this.uLocs = {
+      iTime: gl.getUniformLocation(p,'iTime'),
+      iTimeDelta: gl.getUniformLocation(p,'iTimeDelta'),
+      iFrame: gl.getUniformLocation(p,'iFrame'),
+      iResolution: gl.getUniformLocation(p,'iResolution'),
+      iMouse: gl.getUniformLocation(p,'iMouse'),
+      iDate: gl.getUniformLocation(p,'iDate'),
+      iChannel0: gl.getUniformLocation(p,'iChannel0'),
+      iChannel1: gl.getUniformLocation(p,'iChannel1'),
+      iBufferA: gl.getUniformLocation(p,'iBufferA'),
+      u_color: gl.getUniformLocation(p,'u_color'),
+      u_p: gl.getUniformLocation(p,'u_p[0]') || gl.getUniformLocation(p,'u_p'),
+    };
+    this.compileMs = performance.now() - t0;
+    if(this.errorCb) this.errorCb(null);
+    return true;
+  }
+
+  resize(){
+    const cv = this.cv;
+    const w = cv.clientWidth * this.dpr;
+    const h = cv.clientHeight * this.dpr;
+    if(cv.width !== (w|0) || cv.height !== (h|0)){
+      cv.width = w | 0;
+      cv.height = h | 0;
+      this.resizeBufA();
+    }
+    this.gl.viewport(0, 0, cv.width, cv.height);
+  }
+
+  bindStandardUniforms(){
+    const gl = this.gl, u = this.uLocs;
+    const d = new Date();
+    if(u.iTime) gl.uniform1f(u.iTime, this.t);
+    if(u.iTimeDelta) gl.uniform1f(u.iTimeDelta, this.dt);
+    if(u.iFrame) gl.uniform1i(u.iFrame, this.frame);
+    if(u.iResolution) gl.uniform3f(u.iResolution, this.cv.width, this.cv.height, 1.0);
+    if(u.iMouse) gl.uniform4f(u.iMouse, this.mouse[0], this.mouse[1], this.mouse[2], this.mouse[3]);
+    if(u.iDate) gl.uniform4f(u.iDate, d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()*3600+d.getMinutes()*60+d.getSeconds());
+    if(u.u_color) gl.uniform3fv(u.u_color, this.color);
+    if(u.u_p) gl.uniform1fv(u.u_p, this.params);
+    // Bind textures
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex0);
+    if(u.iChannel0) gl.uniform1i(u.iChannel0, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex1);
+    if(u.iChannel1) gl.uniform1i(u.iChannel1, 1);
+    if(this.bufA){
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.bufA.tex);
+      if(u.iBufferA) gl.uniform1i(u.iBufferA, 2);
+    }
+  }
+
+  frameRender(now){
+    const gl = this.gl;
+    this.resize();
+    if(!this.paused){
+      this.dt = this.tPrev ? (now - this.tPrev) * .001 * this.speed : 0;
+      this.t += this.dt;
+    } else {
+      this.dt = 0;
+    }
+    const deltaMs = now - this.lastFrameMs;
+    if(this.lastFrameMs){
+      this.fpsAcc += deltaMs; this.frames++;
+      if(this.fpsAcc >= 500){ this.fps = Math.round(1000*this.frames/this.fpsAcc); this.fpsAcc=0; this.frames=0; }
+    }
+    this.lastFrameMs = now;
+    this.tPrev = now;
+
+    const activeProg = this.prog || this.lastGoodProg;
+    if(!activeProg) return;
+    gl.useProgram(activeProg);
+
+    if(this.bufAEnabled && this.bufA){
+      // Render to BufferA first (sampling previous BufferA is fine - same tex)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.bufA.fbo);
+      gl.viewport(0, 0, this.bufA.w, this.bufA.h);
+      this.bindStandardUniforms();
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.cv.width, this.cv.height);
+      // Then render to screen using BufferA as input
+      this.bindStandardUniforms();
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    } else {
+      this.bindStandardUniforms();
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    if(!this.paused) this.frame++;
+  }
+
+  resetTime(){ this.t = 0; this.frame = 0; this.t0 = performance.now(); }
+
+  snapshot(){ return this.cv.toDataURL('image/png'); }
+
+  getGPU(){
+    const ext = this.gl.getExtension('WEBGL_debug_renderer_info');
+    if(ext) return this.gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || 'unknown';
+    return 'masked';
+  }
+}
+
+// ═══ Uniform parser (@param 注釈) ═════════════════════════════
+function parseParams(src){
+  const re = /\/\/\s*@param\s+(\w+)\s*\[([\d.\-]+)\s*,\s*([\d.\-]+)\s*,\s*([\d.\-]+)\]/g;
+  const out = []; let m;
+  while((m = re.exec(src)) && out.length < 8){
+    out.push({name:m[1], min:+m[2], max:+m[3], def:+m[4]});
+  }
+  return out;
+}
+
+// ═══ State ════════════════════════════════════════════════════
+const state = {
+  currentPreset: PRESETS[0].id,
+  code: PRESETS[0].code,
+  dirty: false,
+  zen: false,
+  recent: [],
+  paletteIdx: 0,
+  paramDefs: [],
+};
+
+// ═══ UI init ══════════════════════════════════════════════════
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const cv = $('#gl');
+const renderer = new Renderer(cv);
+
+// Populate sidebar
+function buildSidebar(){
+  $('#preset-list').innerHTML = PRESETS.map(p => `
+    <div class="sb-item" data-preset="${p.id}">
+      <span class="sb-icon" style="font-size:14px;display:grid;place-items:center">${p.icon}</span>
+      <span>${p.name}</span>
+      <span class="sb-sw">${p.shortcut}</span>
+    </div>`).join('');
+  $$('[data-preset]').forEach(el => {
+    el.addEventListener('click', () => loadPreset(el.dataset.preset));
+  });
+  updateActive();
+}
+
+function updateActive(){
+  $$('[data-preset]').forEach(el => {
+    el.classList.toggle('active', el.dataset.preset === state.currentPreset);
+  });
+}
+
+// Recent list
+function pushRecent(p){
+  state.recent = [p, ...state.recent.filter(x => x.id !== p.id)].slice(0, 5);
+  $('#recent-list').innerHTML = state.recent.map(r => `
+    <div class="sb-item" data-preset="${r.id}">
+      <span class="sb-icon">⏱</span>
+      <span>${r.name}</span>
+    </div>`).join('');
+  $$('#recent-list [data-preset]').forEach(el => {
+    el.addEventListener('click', () => loadPreset(el.dataset.preset));
+  });
+}
+
+// Editor
+const ta = $('#ed-ta');
+const gutter = $('#ed-gutter');
+
+function setGutter(n, errLine = -1){
+  gutter.innerHTML = Array.from({length:n}, (_,i) => {
+    const ln = i+1;
+    return `<div class="ln${ln===errLine?' err':''}">${ln}</div>`;
+  }).join('');
+}
+function syncGutter(){
+  const lines = (ta.value.match(/\n/g)||[]).length + 1;
+  setGutter(lines);
+  gutter.scrollTop = $('.ed-area').scrollTop;
+}
+ta.addEventListener('input', () => {
+  state.code = ta.value;
+  state.dirty = true;
+  $('#ed-mod').style.display = 'inline';
+  syncGutter();
+  // Debounced recompile
+  clearTimeout(ta._t);
+  ta._t = setTimeout(recompile, 500);
+});
+ta.addEventListener('scroll', () => {
+  gutter.scrollTop = ta.scrollTop;
+});
+ta.addEventListener('keydown', e => {
+  if(e.key === 'Tab'){
+    e.preventDefault();
+    const s = ta.selectionStart, end = ta.selectionEnd;
+    ta.value = ta.value.slice(0,s) + '  ' + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = s + 2;
+    syncGutter();
+  }
+});
+
+// Params UI
+function buildParamsUI(){
+  const defs = parseParams(state.code);
+  state.paramDefs = defs;
+  const slot = $('#param-slots');
+  if(defs.length === 0){
+    slot.innerHTML = '<span style="color:var(--label-3)">このシェーダーにパラメータなし</span>';
+    return;
+  }
+  slot.innerHTML = defs.map((d, i) => `
+    <div class="ins-row">
+      <span class="ins-label">${d.name}</span>
+      <input class="slider" type="range" data-p="${i}"
+        min="${d.min}" max="${d.max}" step="${(d.max-d.min)/200}" value="${d.def}">
+      <span class="ins-val" data-v="${i}">${d.def.toFixed(2)}</span>
+    </div>`).join('');
+  defs.forEach((d,i) => {
+    renderer.params[i] = d.def;
+    const sl = slot.querySelector(`[data-p="${i}"]`);
+    sl.addEventListener('input', e => {
+      const v = +e.target.value;
+      renderer.params[i] = v;
+      slot.querySelector(`[data-v="${i}"]`).textContent = v.toFixed(2);
+    });
+  });
+}
+
+// Compile
+function recompile(){
+  const ok = renderer.compile(state.code);
+  if(ok){
+    $('#ed-chip').className = 'ed-chip ok';
+    $('#ed-chip').textContent = `✓ ${renderer.compileMs.toFixed(1)}ms`;
+    $('#ed-mod').style.display = 'none';
+    state.dirty = false;
+    setGutter((state.code.match(/\n/g)||[]).length + 1);
+    buildParamsUI();
+    if(typeof persist === 'function') persist();
+  }
+}
+
+renderer.errorCb = (log) => {
+  const box = $('.ed-area').querySelector('.ed-errors');
+  if(box) box.remove();
+  if(log){
+    $('#ed-chip').className = 'ed-chip err';
+    $('#ed-chip').textContent = '✗ エラー';
+    const lines = log.split('\n').filter(Boolean).slice(0,4);
+    const el = document.createElement('div');
+    el.className = 'ed-errors';
+    el.innerHTML = lines.map(l => {
+      const m = l.match(/ERROR:\s*\d+:(\d+):\s*(.+)/);
+      if(m) return `<div class="ed-err-line"><b>行 ${m[1]}</b>${m[2]}</div>`;
+      return `<div class="ed-err-line">${l.replace(/</g,'&lt;')}</div>`;
+    }).join('');
+    $('.ed-area').appendChild(el);
+    const firstErr = log.match(/ERROR:\s*\d+:(\d+)/);
+    if(firstErr) setGutter((state.code.match(/\n/g)||[]).length + 1, +firstErr[1]);
+  }
+};
+
+// Load preset
+function loadPreset(id){
+  const p = PRESETS.find(x => x.id === id);
+  if(!p) return;
+  state.currentPreset = id;
+  state.code = p.code;
+  ta.value = p.code;
+  syncGutter();
+  recompile();
+  updateActive();
+  pushRecent(p);
+  if(typeof updateEditorTitle === 'function') updateEditorTitle();
+  // Auto-enable dependencies
+  if(id === 'feedback' && !renderer.bufAEnabled){
+    renderer.enableBufA(true);
+    $('#bufA-on').classList.add('on');
+    toast('Buffer A を自動有効化', 'ok');
+  }
+  if(id === 'audio-bars' && !audio.on){
+    toast(`${p.name} 読込  マイク有効化推奨 (Chパネル)`, 'ok');
+    return;
+  }
+  toast(`${p.name} を読み込みました`, 'ok');
+}
+
+// ═══ Toolbar events ════════════════════════════════════════════
+$('#btn-play').addEventListener('click', () => togglePlay());
+function togglePlay(){
+  renderer.paused = !renderer.paused;
+  const ic = $('#play-ic');
+  const lbl = $('#play-lbl');
+  if(renderer.paused){
+    ic.setAttribute('d','M3 3h4v10H3zM9 3h4v10H9z');
+    lbl.textContent = '再生';
+    $('#hud-status').textContent = '一時停止';
+    $('#hud-status').classList.remove('live');
+  } else {
+    ic.setAttribute('d','M4 3l9 5-9 5V3z');
+    lbl.textContent = '一時停止';
+    $('#hud-status').textContent = 'レンダリング中';
+    $('#hud-status').classList.add('live');
+  }
+}
+
+$('#btn-reset').addEventListener('click', () => {
+  renderer.resetTime();
+  toast('時間をリセット', 'ok');
+});
+
+$('#btn-snap').addEventListener('click', () => {
+  const url = renderer.snapshot();
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aqua-${Date.now()}.png`;
+  a.click();
+  toast('スクリーンショットを保存', 'ok');
+});
+
+$('#btn-zen').addEventListener('click', () => toggleZen());
+function toggleZen(){
+  state.zen = !state.zen;
+  document.body.classList.toggle('zen', state.zen);
+}
+
+$('#btn-editor').addEventListener('click', () => toggleEditor());
+$('#btn-ed-collapse').addEventListener('click', () => toggleEditor());
+function toggleEditor(){
+  $('#editor').classList.toggle('collapsed');
+}
+
+$('#btn-recompile').addEventListener('click', recompile);
+
+// Device sizing
+$$('[data-device]').forEach(b => {
+  b.addEventListener('click', () => {
+    $$('[data-device]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const d = b.dataset.device;
+    const stage = $('#stage');
+    stage.style.padding = d === 'desktop' ? '0' : d === 'tablet' ? '40px 120px' : '40px 30%';
+    setTimeout(() => renderer.resize(), 50);
+  });
+});
+
+// Inspector tabs
+$$('.ins-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    $$('.ins-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const tab = t.dataset.tab;
+    ['params','channels','perf'].forEach(name => {
+      const el = $(`#ins-${name}`);
+      if(el) el.style.display = name === tab ? '' : 'none';
+    });
+  });
+});
+
+// Param sliders
+$('#p-speed').addEventListener('input', e => {
+  renderer.speed = +e.target.value;
+  $('#v-speed').textContent = renderer.speed.toFixed(2) + 'x';
+});
+$('#p-dpr').addEventListener('input', e => {
+  renderer.dpr = +e.target.value;
+  $('#v-dpr').textContent = renderer.dpr.toFixed(2) + 'x';
+});
+$$('.toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('on'));
+});
+$('#p-loop').addEventListener('click', () => {
+  const on = $('#p-loop').classList.contains('on');
+  if(!on) renderer.resetTime();
+});
+
+// Palette
+$$('[data-pal]').forEach(p => {
+  p.addEventListener('click', () => {
+    $$('[data-pal]').forEach(x => x.classList.remove('sel'));
+    p.classList.add('sel');
+    const i = +p.dataset.pal;
+    state.paletteIdx = i;
+    renderer.color = PALETTES[i];
+  });
+});
+
+// Mouse input — vec4: xy=current position (px), zw=click origin (signed; positive while held)
+cv.addEventListener('pointermove', e => {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (cv.width / r.width);
+  const y = cv.height - (e.clientY - r.top) * (cv.height / r.height);
+  renderer.mouse[0] = x; renderer.mouse[1] = y;
+  if(renderer.mouseDown){
+    // While pressed, keep zw positive (abs values = origin)
+    renderer.mouse[2] = Math.abs(renderer.mouse[2]);
+    renderer.mouse[3] = Math.abs(renderer.mouse[3]);
+  }
+});
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) * (cv.width / r.width);
+  const y = cv.height - (e.clientY - r.top) * (cv.height / r.height);
+  renderer.mouse[0] = x; renderer.mouse[1] = y;
+  renderer.mouse[2] = x; renderer.mouse[3] = y;  // click origin (positive = held)
+  renderer.mouseDown = true;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointerup', e => {
+  // On release: make zw negative to signal 'was-held'
+  renderer.mouse[2] = -Math.abs(renderer.mouse[2]);
+  renderer.mouse[3] = -Math.abs(renderer.mouse[3]);
+  renderer.mouseDown = false;
+});
+
+// ═══ Command Palette ══════════════════════════════════════════
+const COMMANDS = [
+  {n:'プリセット: Aqua Flow', sub:'1', act:()=>loadPreset('aqua-flow'), sc:'1'},
+  {n:'プリセット: Ripple', sub:'2', act:()=>loadPreset('ripple'), sc:'2'},
+  {n:'プリセット: Chromatic Plasma', sub:'3', act:()=>loadPreset('plasma'), sc:'3'},
+  {n:'プリセット: Crystal Voronoi', sub:'4', act:()=>loadPreset('crystal'), sc:'4'},
+  {n:'プリセット: Aurora', sub:'5', act:()=>loadPreset('aurora'), sc:'5'},
+  {n:'再生 / 一時停止', sub:'シェーダー', act:()=>togglePlay(), sc:'Space'},
+  {n:'時間をリセット', sub:'シェーダー', act:()=>{renderer.resetTime();toast('時間をリセット','ok');}, sc:'⌘R'},
+  {n:'スクリーンショット', sub:'書き出し', act:()=>$('#btn-snap').click()},
+  {n:'書き出し', sub:'GLSL / ShaderToy / Three.js…', act:()=>openSheet(), sc:'⌘E'},
+  {n:'集中モード切替', sub:'表示', act:()=>toggleZen(), sc:'F'},
+  {n:'エディタ開閉', sub:'表示', act:()=>toggleEditor(), sc:'⌘\\'},
+  {n:'再コンパイル', sub:'シェーダー', act:()=>recompile(), sc:'⌘S'},
+  {n:'新規シェーダー', sub:'空のテンプレート', act:()=>{ta.value='precision highp float;\nuniform vec2 u_resolution;\nuniform float u_time;\nvoid main(){\n  vec2 uv = gl_FragCoord.xy / u_resolution;\n  gl_FragColor = vec4(uv, .5+.5*sin(u_time), 1.);\n}';state.code=ta.value;syncGutter();recompile();}},
+];
+
+function openCmdK(){
+  $('#scrim-cmd').classList.add('show');
+  $('#cmd-input').value = '';
+  $('#cmd-input').focus();
+  renderCmd('');
+}
+function closeCmdK(){ $('#scrim-cmd').classList.remove('show'); }
+$('#btn-cmdk').addEventListener('click', openCmdK);
+$('#scrim-cmd').addEventListener('click', e => { if(e.target.id==='scrim-cmd') closeCmdK(); });
+
+let cmdSel = 0;
+function renderCmd(q){
+  q = q.toLowerCase();
+  const filtered = COMMANDS.filter(c =>
+    c.n.toLowerCase().includes(q) || (c.sub||'').toLowerCase().includes(q));
+  cmdSel = Math.min(cmdSel, filtered.length - 1);
+  if(cmdSel < 0) cmdSel = 0;
+  $('#cmd-list').innerHTML = filtered.map((c, i) => `
+    <div class="cmd-row${i===cmdSel?' sel':''}" data-i="${i}">
+      <span class="ico">⌘</span>
+      <div class="txt"><div>${c.n}</div><div class="sub">${c.sub||''}</div></div>
+      ${c.sc?`<span class="sc">${c.sc}</span>`:''}
+    </div>`).join('');
+  $$('#cmd-list .cmd-row').forEach(r => {
+    r.addEventListener('click', () => {
+      filtered[+r.dataset.i].act();
+      closeCmdK();
+    });
+    r.addEventListener('mousemove', () => {
+      cmdSel = +r.dataset.i; renderCmd($('#cmd-input').value);
+    });
+  });
+  $('#cmd-list')._filtered = filtered;
+}
+$('#cmd-input').addEventListener('input', e => renderCmd(e.target.value));
+$('#cmd-input').addEventListener('keydown', e => {
+  const f = $('#cmd-list')._filtered || [];
+  if(e.key === 'ArrowDown'){ e.preventDefault(); cmdSel = (cmdSel+1) % f.length; renderCmd($('#cmd-input').value); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); cmdSel = (cmdSel-1+f.length) % f.length; renderCmd($('#cmd-input').value); }
+  else if(e.key === 'Enter'){ if(f[cmdSel]){ f[cmdSel].act(); closeCmdK(); } }
+  else if(e.key === 'Escape'){ closeCmdK(); }
+});
+
+// ═══ Export Sheet ═════════════════════════════════════════════
+$('#btn-export').addEventListener('click', openSheet);
+function openSheet(){ $('#scrim-sheet').classList.add('show'); }
+function closeSheet(){ $('#scrim-sheet').classList.remove('show'); }
+$('#sheet-close').addEventListener('click', closeSheet);
+$('#sheet-cancel').addEventListener('click', closeSheet);
+$('#scrim-sheet').addEventListener('click', e => { if(e.target.id==='scrim-sheet') closeSheet(); });
+let sheetFmt = 'glsl';
+$$('.sh-opt').forEach(o => o.addEventListener('click', () => {
+  $$('.sh-opt').forEach(x => x.classList.remove('sel'));
+  o.classList.add('sel');
+  sheetFmt = o.dataset.fmt;
+}));
+
+$('#sheet-ok').addEventListener('click', () => {
+  const p = PRESETS.find(x => x.id === state.currentPreset) || {name:'custom'};
+  const base = p.name.toLowerCase().replace(/\s+/g,'-');
+  let content = '', fn = '', mime = 'text/plain';
+  switch(sheetFmt){
+    case 'glsl':
+      content = state.code;
+      fn = `${base}.frag`;
+      break;
+    case 'shadertoy':
+      content = state.code
+        .replace(/precision\s+\w+\s+float\s*;\s*/g, '')
+        .replace(/uniform\s+vec2\s+u_resolution\s*;\s*/g, '')
+        .replace(/uniform\s+float\s+u_time\s*;\s*/g, '')
+        .replace(/uniform\s+vec2\s+u_mouse\s*;\s*/g, '')
+        .replace(/uniform\s+vec3\s+u_color\s*;\s*/g, `const vec3 u_color=vec3(${renderer.color.join(',')});\n`)
+        .replace(/uniform\s+float\s+u_p\[8\]\s*;\s*/g,
+          `const float u_p[8]=float[8](${Array.from(renderer.params).map(x=>x.toFixed(4)).join(',')});\n`)
+        .replace(/void\s+main\s*\(\s*\)/, 'void mainImage(out vec4 fragColor, in vec2 fragCoord)')
+        .replace(/gl_FragCoord\.xy/g, 'fragCoord')
+        .replace(/gl_FragColor/g, 'fragColor')
+        .replace(/u_time/g, 'iTime')
+        .replace(/u_resolution/g, 'iResolution.xy')
+        .replace(/u_mouse/g, '(iMouse.xy/iResolution.xy)');
+      fn = `${base}-shadertoy.glsl`;
+      break;
+    case 'three':
+      content = `// Three.js ShaderMaterial\nimport * as THREE from 'three';\n\nconst mat = new THREE.ShaderMaterial({\n  uniforms: {\n    u_time: { value: 0 },\n    u_resolution: { value: new THREE.Vector2() },\n    u_mouse: { value: new THREE.Vector2(.5,.5) },\n    u_color: { value: new THREE.Vector3(${renderer.color.join(',')}) },\n    u_p: { value: new Float32Array([${Array.from(renderer.params).join(',')}]) },\n  },\n  vertexShader: \`void main(){gl_Position=vec4(position,1);}\`,\n  fragmentShader: \`${state.code.replace(/`/g,'\\`')}\`\n});`;
+      fn = `${base}.three.js`;
+      mime = 'application/javascript';
+      break;
+    case 'html':
+      content = standaloneHTML(state.code, renderer.color, Array.from(renderer.params));
+      fn = `${base}.html`;
+      mime = 'text/html';
+      break;
+    case 'png':
+      const a = document.createElement('a');
+      a.href = renderer.snapshot();
+      a.download = `${base}.png`;
+      a.click();
+      closeSheet();
+      toast('PNG書き出し完了','ok');
+      return;
+    case 'json':
+      content = JSON.stringify({
+        app: 'AQUA', version: '2.0',
+        preset: state.currentPreset,
+        code: state.code,
+        color: renderer.color,
+        params: Array.from(renderer.params),
+      }, null, 2);
+      fn = `${base}.aqua.json`;
+      mime = 'application/json';
+      break;
+  }
+  const blob = new Blob([content], {type: mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fn; a.click();
+  URL.revokeObjectURL(url);
+  closeSheet();
+  toast(`${fn} を書き出し`, 'ok');
+});
+
+function standaloneHTML(code, color, params){
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Shader</title><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{width:100%;height:100%;display:block}</style></head><body><canvas id=c></canvas><script>
+const cv=document.getElementById('c'),gl=cv.getContext('webgl2')||cv.getContext('webgl');
+const vs=\`${'#version 300 es\\nin vec2 p;void main(){gl_Position=vec4(p,0,1);}'}\`;
+const fs=\`${code.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`;
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);return x}
+const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);gl.useProgram(p);
+const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const a=gl.getAttribLocation(p,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+const ut=gl.getUniformLocation(p,'u_time'),ur=gl.getUniformLocation(p,'u_resolution'),um=gl.getUniformLocation(p,'u_mouse'),uc=gl.getUniformLocation(p,'u_color'),up=gl.getUniformLocation(p,'u_p');
+const mouse=[.5,.5];addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();mouse[0]=(e.clientX-r.left)/r.width;mouse[1]=1-(e.clientY-r.top)/r.height});
+function loop(t){cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;gl.viewport(0,0,cv.width,cv.height);gl.uniform1f(ut,t*.001);gl.uniform2f(ur,cv.width,cv.height);gl.uniform2fv(um,mouse);gl.uniform3fv(uc,[${color.join(',')}]);gl.uniform1fv(up,[${params.join(',')}]);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);requestAnimationFrame(loop)}loop(0);
+<\/script></body></html>`;
+}
+
+// ═══ Keyboard ═════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  const cmd = e.metaKey || e.ctrlKey;
+  const inText = e.target.matches('textarea,input');
+  if(cmd && e.key === 'k'){ e.preventDefault(); openCmdK(); return; }
+  if(cmd && e.shiftKey && (e.key === 'S' || e.key === 's')){ e.preventDefault(); $('#btn-share').click(); return; }
+  if(cmd && e.key === 's'){ e.preventDefault(); recompile(); toast('再コンパイル','ok'); return; }
+  if(cmd && e.key === 'e'){ e.preventDefault(); openSheet(); return; }
+  if(cmd && e.key === 'r' && !inText){ e.preventDefault(); renderer.resetTime(); return; }
+  if(cmd && e.key === '\\'){ e.preventDefault(); toggleEditor(); return; }
+  if(inText) return;
+  if(e.key === ' '){ e.preventDefault(); togglePlay(); }
+  else if(e.key === 'f'){ toggleZen(); }
+  else if(e.key === 'r' || e.key === 'R'){ if(recorder.on) recStop(); else recStart(); }
+  else if(/^[1-7]$/.test(e.key)){
+    const p = PRESETS[+e.key - 1]; if(p) loadPreset(p.id);
+  }
+  else if(e.key === 'Escape'){ closeCmdK(); closeSheet(); if(state.zen) toggleZen(); }
+});
+
+// ═══ Toast ════════════════════════════════════════════════════
+function toast(msg, kind=''){
+  const t = document.createElement('div');
+  t.className = 'toast' + (kind?' '+kind:'');
+  const ic = kind==='ok' ? '✓' : kind==='err' ? '✕' : '●';
+  t.innerHTML = `<span class="ic">${ic}</span><span>${msg}</span>`;
+  $('#toasts').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 350); }, 2200);
+}
+
+// ═══ Texture (iChannel0) ═════════════════════════════════════
+function loadImageFromFile(file){
+  if(!file || !file.type.startsWith('image/')){ toast('画像ファイルのみ可','err'); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    renderer.setTex0FromImage(img);
+    const prev = $('#ch-prev-0');
+    prev.innerHTML = `<img src="${url}" alt="">`;
+    prev.classList.add('has');
+    URL.revokeObjectURL(url);
+    toast(`テクスチャ読込: ${img.width}×${img.height}`, 'ok');
+    persist();
+  };
+  img.onerror = () => toast('画像読込失敗','err');
+  img.src = url;
+}
+$('#ch-load-0').addEventListener('click', () => $('#file-tex').click());
+$('#file-tex').addEventListener('change', e => {
+  const f = e.target.files[0]; if(f) loadImageFromFile(f);
+});
+$('#ch-clear-0').addEventListener('click', () => {
+  renderer.clearTex0();
+  const prev = $('#ch-prev-0');
+  prev.innerHTML = '<span>空</span>';
+  prev.classList.remove('has');
+  toast('テクスチャを削除','ok');
+});
+$('#ch-prev-0').innerHTML = '<span>空</span>';
+
+// Drag & drop on stage
+const stage = $('#stage');
+['dragenter','dragover'].forEach(ev => stage.addEventListener(ev, e => {
+  e.preventDefault(); stage.classList.add('drop-hover');
+}));
+['dragleave','drop'].forEach(ev => stage.addEventListener(ev, e => {
+  if(ev === 'dragleave' && e.target !== stage) return;
+  stage.classList.remove('drop-hover');
+}));
+stage.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if(f) loadImageFromFile(f);
+});
+
+// ═══ Audio FFT → iChannel1 ══════════════════════════════════
+let audio = { ctx:null, analyser:null, src:null, stream:null, fftArr:null, waveArr:null, pixels:null, on:false };
+async function audioEnable(){
+  if(audio.on) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+    audio.stream = stream;
+    audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audio.ctx.createMediaStreamSource(stream);
+    const an = audio.ctx.createAnalyser();
+    an.fftSize = 512; an.smoothingTimeConstant = 0.8;
+    src.connect(an);
+    audio.src = src; audio.analyser = an;
+    audio.fftArr = new Uint8Array(256);
+    audio.waveArr = new Uint8Array(256);
+    audio.pixels = new Uint8Array(256 * 2 * 4);
+    audio.on = true;
+    $('#ch-audio-on').classList.add('on');
+    toast('マイク有効化','ok');
+  } catch(e){
+    toast('マイク拒否 — ブラウザ設定を確認','err');
+  }
+}
+function audioDisable(){
+  if(!audio.on) return;
+  audio.stream?.getTracks().forEach(t => t.stop());
+  audio.ctx?.close();
+  audio = { ctx:null, analyser:null, src:null, stream:null, fftArr:null, waveArr:null, pixels:null, on:false };
+  $('#ch-audio-on').classList.remove('on');
+  // Clear texture
+  renderer.setTex1FromPixels(new Uint8Array([0,0,0,255]), 1, 1);
+  toast('マイク停止','ok');
+}
+$('#ch-audio-on').addEventListener('click', () => {
+  if(audio.on) audioDisable(); else audioEnable();
+});
+
+function audioTick(){
+  if(!audio.on || !audio.analyser) return;
+  audio.analyser.getByteFrequencyData(audio.fftArr);
+  audio.analyser.getByteTimeDomainData(audio.waveArr);
+  // Pack into 256x2 texture: row0 = FFT, row1 = waveform
+  const p = audio.pixels;
+  for(let i=0; i<256; i++){
+    const f = audio.fftArr[i], w = audio.waveArr[i];
+    const o0 = i*4, o1 = (256+i)*4;
+    p[o0]=f; p[o0+1]=f; p[o0+2]=f; p[o0+3]=255;
+    p[o1]=w; p[o1+1]=w; p[o1+2]=w; p[o1+3]=255;
+  }
+  renderer.setTex1FromPixels(p, 256, 2);
+  // Update preview canvas
+  const pc = $('#audio-prev');
+  if(pc){
+    const c2 = pc.getContext('2d');
+    c2.clearRect(0,0,pc.width,pc.height);
+    c2.fillStyle = '#64D2FF';
+    const bw = pc.width/64;
+    for(let i=0; i<64; i++){
+      const h = audio.fftArr[i*4] / 255 * pc.height;
+      c2.fillRect(i*bw, pc.height-h, bw-1, h);
+    }
+  }
+}
+
+// ═══ BufferA toggle ═════════════════════════════════════════
+$('#bufA-on').addEventListener('click', e => {
+  const on = e.currentTarget.classList.contains('on');
+  renderer.enableBufA(on);
+  if(on) toast('Buffer A 有効（iBufferA）','ok');
+});
+
+// ═══ Video Recording (WebM) ═════════════════════════════════
+let recorder = { mr:null, chunks:[], on:false, start:0 };
+function recStart(){
+  if(recorder.on) return;
+  if(!window.MediaRecorder){ toast('このブラウザは録画非対応','err'); return; }
+  const stream = cv.captureStream(60);
+  let mime = '';
+  for(const m of ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']){
+    if(MediaRecorder.isTypeSupported(m)){ mime = m; break; }
+  }
+  if(!mime){ toast('対応コーデック無','err'); return; }
+  const mr = new MediaRecorder(stream, {mimeType: mime, videoBitsPerSecond: 8_000_000});
+  recorder.chunks = [];
+  mr.ondataavailable = e => { if(e.data.size) recorder.chunks.push(e.data); };
+  mr.onstop = () => {
+    const blob = new Blob(recorder.chunks, {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `aqua-${Date.now()}.webm`; a.click();
+    URL.revokeObjectURL(url);
+    toast(`録画保存: ${(blob.size/1024/1024).toFixed(1)}MB`, 'ok');
+  };
+  mr.start(100);
+  recorder.mr = mr; recorder.on = true; recorder.start = performance.now();
+  $('#btn-record').classList.add('on');
+  $('#rec-pill').classList.add('on');
+  toast('録画開始','ok');
+}
+function recStop(){
+  if(!recorder.on) return;
+  recorder.mr.stop();
+  recorder.on = false;
+  $('#btn-record').classList.remove('on');
+  $('#rec-pill').classList.remove('on');
+}
+function recorderTick(now){
+  if(!recorder.on) return;
+  const s = Math.floor((now - recorder.start) / 1000);
+  const mm = String(s/60|0).padStart(2,'0');
+  const ss = String(s%60).padStart(2,'0');
+  $('#rec-time').textContent = `${mm}:${ss}`;
+  if(s >= 300){ recStop(); toast('最大5分で停止','ok'); }
+}
+$('#btn-record').addEventListener('click', () => {
+  if(recorder.on) recStop(); else recStart();
+});
+
+// ═══ Persist (localStorage) ═════════════════════════════════
+const PERSIST_KEY = 'aqua.v2.state';
+function persist(){
+  try {
+    const data = {
+      code: state.code,
+      preset: state.currentPreset,
+      paletteIdx: state.paletteIdx,
+      params: Array.from(renderer.params),
+      speed: renderer.speed,
+      dpr: renderer.dpr,
+      bufA: renderer.bufAEnabled,
+    };
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+  } catch(e){}
+}
+function restore(){
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(d.code) state.code = d.code;
+    if(d.preset) state.currentPreset = d.preset;
+    if(typeof d.paletteIdx === 'number'){
+      state.paletteIdx = d.paletteIdx;
+      renderer.color = PALETTES[d.paletteIdx] || PALETTES[0];
+      $$('[data-pal]').forEach(x => x.classList.remove('sel'));
+      const el = document.querySelector(`[data-pal="${d.paletteIdx}"]`);
+      if(el) el.classList.add('sel');
+    }
+    if(Array.isArray(d.params)) d.params.forEach((v,i) => renderer.params[i] = v);
+    if(d.speed){ renderer.speed = d.speed; $('#p-speed').value = d.speed; $('#v-speed').textContent = d.speed.toFixed(2)+'x'; }
+    if(d.dpr){ renderer.dpr = d.dpr; $('#p-dpr').value = d.dpr; $('#v-dpr').textContent = d.dpr.toFixed(2)+'x'; }
+    if(d.bufA){ renderer.enableBufA(true); $('#bufA-on').classList.add('on'); }
+    return true;
+  } catch(e){ return false; }
+}
+setInterval(persist, 3000);
+
+// ═══ Share link (URL hash, compressed) ═══════════════════════
+async function encodeShare(){
+  const payload = JSON.stringify({ c: state.code, p: state.paletteIdx, v: Array.from(renderer.params) });
+  if('CompressionStream' in window){
+    const cs = new Blob([payload]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    const buf = await new Response(cs).arrayBuffer();
+    return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  } else {
+    return 'u' + btoa(encodeURIComponent(payload)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+}
+async function decodeShare(str){
+  try {
+    if(str.startsWith('u')){
+      return JSON.parse(decodeURIComponent(atob(str.slice(1).replace(/-/g,'+').replace(/_/g,'/'))));
+    }
+    const bin = atob(str.replace(/-/g,'+').replace(/_/g,'/'));
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    if('DecompressionStream' in window){
+      const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      const text = await new Response(ds).text();
+      return JSON.parse(text);
+    }
+    return null;
+  } catch(e){ return null; }
+}
+$('#btn-share').addEventListener('click', async () => {
+  const hash = await encodeShare();
+  const url = location.origin + location.pathname + '#s=' + hash;
+  await navigator.clipboard.writeText(url).catch(()=>{});
+  toast(`共有リンクをコピー (${(url.length/1024).toFixed(1)}KB)`, 'ok');
+});
+
+async function loadFromHash(){
+  const h = location.hash;
+  if(!h.startsWith('#s=')) return false;
+  const d = await decodeShare(h.slice(3));
+  if(!d) return false;
+  state.code = d.c;
+  ta.value = d.c;
+  if(typeof d.p === 'number'){
+    state.paletteIdx = d.p;
+    renderer.color = PALETTES[d.p] || PALETTES[0];
+  }
+  if(Array.isArray(d.v)) d.v.forEach((v,i) => renderer.params[i] = v);
+  syncGutter();
+  recompile();
+  toast('共有リンクから読込', 'ok');
+  return true;
+}
+
+// ═══ Stats ═════════════════════════════════════════════════════
+function updateStats(){
+  const fps = renderer.fps;
+  $('#hud-fps').textContent = fps + ' FPS';
+  $('#hud-res').textContent = `${renderer.cv.width}×${renderer.cv.height}`;
+  const fpsEl = $('#st-fps');
+  fpsEl.textContent = fps || '—';
+  fpsEl.className = 'stat-v ' + (fps>=55?'ok':fps>=30?'warn':'err');
+  $('#st-ft').textContent = fps ? (1000/fps).toFixed(1) + 'ms' : '—';
+  $('#st-res').textContent = `${renderer.cv.width}×${renderer.cv.height}`;
+  $('#st-comp').textContent = renderer.compileMs.toFixed(1) + 'ms';
+  $('#st-gpu').textContent = renderer.getGPU().slice(0, 28);
+  $('#st-gl').textContent = renderer.isGL2 ? '2.0' : '1.0';
+}
+setInterval(updateStats, 500);
+
+// ═══ Main loop ════════════════════════════════════════════════
+function loop(now){
+  audioTick();
+  renderer.frameRender(now);
+  recorderTick(now);
+  requestAnimationFrame(loop);
+}
+
+// ═══ Editor title/dirty wiring ═════════════════════════════
+function updateEditorTitle(){
+  const p = PRESETS.find(x => x.id === state.currentPreset);
+  $('#ed-fn').textContent = p ? `${p.name.toLowerCase().replace(/\s+/g,'-')}.frag` : 'custom.frag';
+}
+
+// Persist on slider/palette changes
+$$('[data-pal]').forEach(p => p.addEventListener('click', persist));
+$('#p-speed').addEventListener('change', persist);
+$('#p-dpr').addEventListener('change', persist);
+
+// ═══ Extend command palette with new features ═══════════════
+COMMANDS.push(
+  {n:'iChannel0 に画像を読込', sub:'テクスチャ', act:()=>$('#ch-load-0').click()},
+  {n:'マイクを有効化', sub:'iChannel1 (FFT + 波形)', act:()=>audioEnable()},
+  {n:'マイクを停止', sub:'iChannel1', act:()=>audioDisable()},
+  {n:'Buffer A 切替', sub:'iBufferA フィードバック', act:()=>{$('#bufA-on').click();}},
+  {n:'動画録画 開始/停止', sub:'WebM (R)', act:()=>{if(recorder.on) recStop(); else recStart();}, sc:'R'},
+  {n:'共有リンク生成', sub:'URL にコピー (⌘⇧S)', act:()=>$('#btn-share').click(), sc:'⌘⇧S'},
+  {n:'保存状態をリセット', sub:'localStorage 初期化', act:()=>{
+    localStorage.removeItem(PERSIST_KEY);
+    toast('保存状態を初期化', 'ok');
+  }},
+  {n:'プリセット: Audio Bars', sub:'6 — マイク必須', act:()=>loadPreset('audio-bars'), sc:'6'},
+  {n:'プリセット: Feedback Loop', sub:'7 — Buffer A必須', act:()=>loadPreset('feedback'), sc:'7'},
+);
+
+// ═══ Boot ═════════════════════════════════════════════════════
+buildSidebar();
+// Restore priority: URL hash > localStorage > default preset
+(async () => {
+  const fromHash = await loadFromHash();
+  if(!fromHash){
+    const restored = restore();
+    ta.value = state.code;
+    syncGutter();
+    recompile();
+    if(restored){
+      updateActive();
+      buildParamsUI();  // sync slider positions to restored params
+      // Push slider DOM values to match restored renderer.params
+      state.paramDefs.forEach((d, i) => {
+        const sl = $(`#param-slots [data-p="${i}"]`);
+        const vl = $(`#param-slots [data-v="${i}"]`);
+        if(sl){ sl.value = renderer.params[i]; }
+        if(vl){ vl.textContent = renderer.params[i].toFixed(2); }
+      });
+    }
+  }
+  updateEditorTitle();
+})();
+requestAnimationFrame(loop);
+window.addEventListener('resize', () => renderer.resize());
+window.addEventListener('hashchange', loadFromHash);
+window.addEventListener('beforeunload', persist);
+
+// Welcome (skip if restored from hash)
+setTimeout(() => {
+  if(!location.hash.startsWith('#s=')){
+    toast('AQUA 2.0 へようこそ  ⌘K でコマンド', 'ok');
+  }
+}, 400);
+</script>
+</body>
+</html>
